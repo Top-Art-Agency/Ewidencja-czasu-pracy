@@ -616,7 +616,22 @@ $("exportBtn").onclick = async () => {
   await logAction("-", `eksport raportu ${from} – ${to} (${rg === "all" ? "wszystkie grupy" : groupName(rg)})`);
 };
 
-setInterval(render, 30000); // odświeżanie liczników co 30 s
+// Automatyczne przejście na nowy dzień (po północy lub po powrocie do aplikacji)
+let lastToday = new Date().toLocaleDateString("sv-SE");
+function checkNewDay() {
+  const today = new Date().toLocaleDateString("sv-SE");
+  if (today === lastToday) return;
+  // przełącz tylko, jeśli ktoś oglądał "dzisiaj", a nie celowo inny dzień
+  if ($("day").value === lastToday) {
+    $("day").value = today;
+    $("from").value = $("to").value = today;
+    subscribe();
+  }
+  lastToday = today;
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { checkNewDay(); render(); } });
+
+setInterval(() => { checkNewDay(); render(); }, 30000); // odświeżanie liczników co 30 s
 </script>
 </body>
 </html>
