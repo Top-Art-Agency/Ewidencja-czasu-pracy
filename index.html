@@ -12,9 +12,11 @@
   .wrap{max-width:640px;margin:0 auto;padding:12px 12px 40px}
   header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
   h1{font-size:22px;margin:0}
-  input,select,button{font:inherit;color:inherit}
-  input[type=date],input[type=time],input[type=email],input[type=password],input[type=text],select{
+  h3{font-size:15px;margin:14px 0 6px}
+  input,select,button,textarea{font:inherit;color:inherit}
+  input[type=date],input[type=time],input[type=email],input[type=password],input[type=text],select,textarea{
     padding:10px;border:1px solid #ccc;border-radius:10px;background:#fff;width:100%;min-height:44px}
+  textarea{resize:vertical;min-height:70px}
   button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;background:#e5e7eb;cursor:pointer}
   button:disabled{opacity:.45;cursor:default}
   .primary{background:#2563eb;color:#fff}
@@ -26,6 +28,7 @@
   .card.onbreak{background:#fff8e1;outline:2px solid #f59e0b}
   .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
   .name{font-weight:600;font-size:18px;background:none;padding:0;min-height:auto;text-align:left;color:#1d4ed8}
+  .badge{font-size:12px;color:#666;margin-left:4px}
   .chip{font-size:12px;padding:4px 10px;border-radius:999px;background:#e5e7eb;white-space:nowrap}
   .chip.work{background:#dcfce7;color:#166534}
   .chip.brk{background:#fef3c7;color:#92400e}
@@ -43,12 +46,20 @@
   .hidden{display:none!important}
   .muted{color:#666;font-size:13px}
   .field{margin:10px 0}
-  dialog{border:0;border-radius:16px;padding:16px;width:min(92vw,420px)}
+  .tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0 8px;-webkit-overflow-scrolling:touch}
+  .tabs button{flex:0 0 auto;min-height:38px;padding:6px 14px;border-radius:999px;background:#e5e7eb;font-size:15px}
+  .tabs button.active{background:#2563eb;color:#fff}
+  dialog{border:0;border-radius:16px;padding:16px;width:min(94vw,440px);max-height:90vh}
   dialog::backdrop{background:rgba(0,0,0,.4)}
   .check{display:flex;align-items:center;gap:10px;min-height:44px}
   .check input{width:22px;height:22px}
   .brow{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin:6px 0;align-items:center}
   .brow button{min-height:44px;padding:0 12px}
+  .grow{display:grid;grid-template-columns:1fr auto;gap:6px;margin:6px 0}
+  .comment{background:#f4f5f7;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:14px}
+  .comment .meta{font-size:12px;color:#666;display:flex;justify-content:space-between;gap:6px;align-items:center}
+  .comment .meta button{min-height:28px;padding:2px 8px;font-size:12px}
+  .comment p{margin:4px 0 0;white-space:pre-wrap;word-break:break-word}
 </style>
 </head>
 <body>
@@ -72,13 +83,25 @@
     <div class="muted" id="who"></div>
     <div class="field"><input type="date" id="day"></div>
 
+    <div id="groupTabs" class="tabs"></div>
+
     <div id="cards"></div>
 
     <details>
       <summary>Dodaj animatora</summary>
-      <div class="row" style="margin-top:10px">
+      <p class="muted" id="addInfo" style="margin:8px 0 0"></p>
+      <div class="row" style="margin-top:8px">
         <input id="newName" type="text" placeholder="Imię">
         <button id="addBtn" class="primary" style="flex:0 0 auto">Dodaj</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Grupy</summary>
+      <div id="groupList"></div>
+      <div class="grow" style="margin-top:10px">
+        <input id="newGroup" type="text" placeholder="Nazwa nowej grupy">
+        <button id="addGroupBtn" class="primary">Dodaj</button>
       </div>
     </details>
 
@@ -88,7 +111,8 @@
         <div><span class="lbl">Od</span><input type="date" id="from"></div>
         <div><span class="lbl">Do</span><input type="date" id="to"></div>
       </div>
-      <button id="exportBtn" class="primary full" style="margin-top:10px">Pobierz Excel</button>
+      <div class="field"><span class="lbl">Grupa</span><select id="rGroup"></select></div>
+      <button id="exportBtn" class="primary full">Pobierz Excel</button>
     </details>
 
     <details>
@@ -100,25 +124,32 @@
 
 <dialog id="profile">
   <h2 id="pName" style="margin:0 0 8px"></h2>
+  <div class="field"><span class="lbl">Grupa</span><select id="pGroup"></select></div>
   <div class="field"><span class="lbl">Umowa</span><select id="pContract"></select></div>
   <label class="check"><input type="checkbox" id="pStudent"> Student</label>
   <label class="check"><input type="checkbox" id="pOver26"> Powyżej 26 lat</label>
-  <div class="field">
-    <span class="lbl" id="pDayLbl" style="font-weight:600;color:#1c1c1e;font-size:14px">Czas pracy</span>
-    <div class="times" style="margin:6px 0">
-      <div><label>Przyjście</label><input type="time" id="pArrival"></div>
-      <div><label>Wyjście</label><input type="time" id="pDeparture"></div>
-    </div>
-    <span class="lbl">Przerwy (od – do)</span>
-    <div id="pBreaks"></div>
-    <div id="pOngoing" class="muted"></div>
-    <button id="pAddBreak" class="small full" style="margin-top:6px">+ Dodaj przerwę</button>
+
+  <h3 id="pDayLbl">Czas pracy</h3>
+  <div class="times" style="margin:6px 0">
+    <div><label>Przyjście</label><input type="time" id="pArrival"></div>
+    <div><label>Wyjście</label><input type="time" id="pDeparture"></div>
   </div>
-  <div class="row" style="margin-top:12px">
+  <span class="lbl">Przerwy (od – do)</span>
+  <div id="pBreaks"></div>
+  <div id="pOngoing" class="muted"></div>
+  <button id="pAddBreak" class="small full" style="margin-top:6px">+ Dodaj przerwę</button>
+
+  <div class="row" style="margin-top:14px">
     <button id="pSave" class="primary">Zapisz</button>
     <button id="pClose">Zamknij</button>
   </div>
-  <button id="pRemove" class="danger full" style="margin-top:8px">Usuń z listy</button>
+
+  <h3>Komentarze</h3>
+  <textarea id="cText" placeholder="Np. spóźnienie, świetna praca z dziećmi, uwagi…"></textarea>
+  <button id="cAdd" class="small full" style="margin-top:6px">Dodaj komentarz</button>
+  <div id="cList"></div>
+
+  <button id="pRemove" class="danger full" style="margin-top:14px">Usuń z listy</button>
 </dialog>
 
 <script type="module">
@@ -126,7 +157,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendEmailVerification, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, getDocs,
+import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, addDoc, query, getDocs,
   where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -140,22 +171,33 @@ const firebaseConfig = {
 
 const DOMAINS = /@(topart|qmk)\.pl$/i;
 const CONTRACTS = ["Umowa o pracę", "Zlecenie", "B2B", "Inna"];
-const LABELS = { contract: "umowa", student: "student", over26: "26+" };
+const LABELS = { contract: "umowa", student: "student", over26: "26+", group: "grupa" };
+const DEFAULT_GROUPS = [
+  { id: "g1", name: "Moja grupa", order: 1 },
+  { id: "g2", name: "Punkt 1", order: 2 },
+  { id: "g3", name: "Punkt 2", order: 3 },
+  { id: "g4", name: "Punkt 3", order: 4 }
+];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
 const $ = id => document.getElementById(id);
-const esc = s => String(s).replace(/[&<>"']/g, c =>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} }
+};
 
 $("day").value = new Date().toLocaleDateString("sv-SE");
 $("from").value = $("to").value = $("day").value;
 $("pContract").innerHTML = CONTRACTS.map(c => `<option>${c}</option>`).join("");
 
 let user = null, shifts = {}, people = {}, ANIMATORS = [], current = null;
-let unsubShifts = null, unsubLog = null, unsubPeople = null;
+let groups = {}, GROUP_IDS = [], currentGroup = store.get("group") || "g1", seeded = false;
+let unsubShifts = null, unsubLog = null, unsubPeople = null, unsubGroups = null, unsubComments = null;
 
 // ---------- Logowanie ----------
 $("loginBtn").onclick = async () => {
@@ -189,7 +231,7 @@ onAuthStateChanged(auth, u => {
   $("logoutBtn").classList.toggle("hidden", !user);
   $("app").classList.toggle("hidden", !user);
   $("who").textContent = user ? "Zalogowano: " + user.email : "";
-  if (user) { subscribe(); subscribeAnimators(); }
+  if (user) { subscribe(); subscribeAnimators(); subscribeGroups(); }
 });
 
 // ---------- Dane ----------
@@ -217,6 +259,29 @@ function subscribeAnimators() {
     render();
   });
 }
+
+function subscribeGroups() {
+  unsubGroups && unsubGroups();
+  unsubGroups = onSnapshot(collection(db, "groups"), async snap => {
+    if (snap.empty && !seeded) {            // pierwsze uruchomienie – utwórz 4 grupy
+      seeded = true;
+      for (const g of DEFAULT_GROUPS) await setDoc(doc(db, "groups", g.id), { name: g.name, order: g.order });
+      return;
+    }
+    groups = {};
+    snap.forEach(d => groups[d.id] = d.data());
+    GROUP_IDS = Object.keys(groups).sort((a, b) => (groups[a].order || 0) - (groups[b].order || 0));
+    if (!groups[currentGroup]) currentGroup = GROUP_IDS[0];
+    renderGroups();
+    render();
+  });
+}
+
+const groupOf = name => {
+  const g = people[name]?.group;
+  return groups[g] ? g : GROUP_IDS[0];
+};
+const groupName = id => groups[id]?.name || "–";
 
 // ---------- Obliczenia ----------
 const now = () => new Date().toTimeString().slice(0, 5);
@@ -263,21 +328,72 @@ function toggleBreak(name) {
 $("addBtn").onclick = async () => {
   const name = $("newName").value.trim().replace(/\//g, "-");
   if (!name) return;
+  if (people[name]) return alert(`${name} już jest na liście (grupa: ${groupName(groupOf(name))}). Dodaj np. inicjał nazwiska.`);
   await setDoc(doc(db, "animators", name),
-    { name, contract: "Zlecenie", student: false, over26: false, active: true });
-  await logAction(name, "dodano animatora");
+    { name, contract: "Zlecenie", student: false, over26: false, active: true, group: currentGroup });
+  await logAction(name, `dodano animatora (grupa: ${groupName(currentGroup)})`);
   $("newName").value = "";
+};
+
+// ---------- Grupy ----------
+function renderGroups() {
+  $("groupTabs").innerHTML = GROUP_IDS.map(id => {
+    const count = ANIMATORS.filter(n => groupOf(n) === id).length;
+    return `<button data-group="${id}" class="${id === currentGroup ? "active" : ""}">${esc(groups[id].name)} (${count})</button>`;
+  }).join("");
+  if (!$("groupList").contains(document.activeElement)) {   // nie kasuj wpisywanej nazwy
+    $("groupList").innerHTML = GROUP_IDS.map(id => `<div class="grow">
+        <input type="text" data-gid="${id}" value="${esc(groups[id].name)}">
+        <button class="small" data-rename="${id}">Zmień</button>
+      </div>`).join("");
+  }
+  const opts = GROUP_IDS.map(id => `<option value="${id}">${esc(groups[id].name)}</option>`).join("");
+  const pg = $("pGroup").value;
+  $("pGroup").innerHTML = opts;
+  if (pg && groups[pg]) $("pGroup").value = pg;
+  const r = $("rGroup").value;
+  $("rGroup").innerHTML = `<option value="all">Wszystkie grupy</option>` + opts;
+  if (r) $("rGroup").value = r;
+  $("addInfo").textContent = `Zostanie dodany do grupy: ${groupName(currentGroup)}`;
+}
+
+$("groupTabs").addEventListener("click", e => {
+  const b = e.target.closest("[data-group]"); if (!b) return;
+  currentGroup = b.dataset.group; store.set("group", currentGroup);
+  renderGroups(); render();
+});
+
+$("groupList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-rename]"); if (!b) return;
+  const id = b.dataset.rename;
+  const val = document.querySelector(`[data-gid="${id}"]`).value.trim();
+  if (!val || val === groups[id].name) return;
+  const old = groups[id].name;
+  await setDoc(doc(db, "groups", id), { name: val }, { merge: true });
+  await logAction("-", `zmiana nazwy grupy: ${old} → ${val}`);
+});
+
+$("addGroupBtn").onclick = async () => {
+  const name = $("newGroup").value.trim(); if (!name) return;
+  const order = Math.max(0, ...GROUP_IDS.map(id => groups[id].order || 0)) + 1;
+  const ref = await addDoc(collection(db, "groups"), { name, order });
+  await logAction("-", `dodano grupę: ${name}`);
+  $("newGroup").value = "";
+  currentGroup = ref.id; store.set("group", currentGroup);
 };
 
 // ---------- Widok kart ----------
 function render() {
+  renderGroups();
   // nie przerywaj wpisywania godziny
-  if (document.activeElement && document.activeElement.type === "time") return;
-  if (!ANIMATORS.length) {
-    $("cards").innerHTML = `<div class="card muted">Brak animatorów – dodaj ich poniżej.</div>`;
+  if (document.activeElement && document.activeElement.type === "time" &&
+      $("cards").contains(document.activeElement)) return;
+  const list = ANIMATORS.filter(n => groupOf(n) === currentGroup);
+  if (!list.length) {
+    $("cards").innerHTML = `<div class="card muted">Brak animatorów w tej grupie – dodaj ich poniżej.</div>`;
     return;
   }
-  $("cards").innerHTML = ANIMATORS.map(n => {
+  $("cards").innerHTML = list.map(n => {
     const s = shifts[n] || {}, e = esc(n);
     const start = toMin(s.arrival);
     const end = toMin(s.departure) ?? (s.arrival ? toMin(now()) : null);
@@ -345,6 +461,7 @@ function openProfile(n) {
   current = n;
   const p = people[n] || {}, s = shifts[n] || {};
   $("pName").textContent = n;
+  $("pGroup").value = groupOf(n);
   $("pContract").value = p.contract || "Zlecenie";
   $("pStudent").checked = !!p.student;
   $("pOver26").checked = !!p.over26;
@@ -354,10 +471,13 @@ function openProfile(n) {
   editBreaks = (s.breaks || []).map(b => ({ ...b }));
   $("pOngoing").textContent = s.breakStart ? `Trwa przerwa od ${s.breakStart} (zakończ ją przyciskiem na karcie).` : "";
   renderBreakRows();
+  $("cText").value = "";
+  subscribeComments(n);
   $("profile").showModal();
 }
 
 $("pClose").onclick = () => $("profile").close();
+$("profile").addEventListener("close", () => { unsubComments && unsubComments(); unsubComments = null; });
 
 $("pSave").onclick = async () => {
   const n = current, p = people[n] || {}, s = shifts[n] || {};
@@ -373,14 +493,16 @@ $("pSave").onclick = async () => {
   }
   breaks.sort((a, b) => toMin(a.start) - toMin(b.start));
 
-  // --- dane osobowe ---
-  const upd = { contract: $("pContract").value, student: $("pStudent").checked, over26: $("pOver26").checked };
-  const old = { contract: p.contract || "", student: !!p.student, over26: !!p.over26 };
+  // --- dane osobowe i grupa ---
+  const upd = { group: $("pGroup").value, contract: $("pContract").value,
+    student: $("pStudent").checked, over26: $("pOver26").checked };
+  const old = { group: groupOf(n), contract: p.contract || "", student: !!p.student, over26: !!p.over26 };
   const changed = Object.keys(upd).filter(k => old[k] !== upd[k]);
   if (changed.length) {
     await setDoc(doc(db, "animators", n), upd, { merge: true });
     for (const k of changed) {
-      const v = typeof upd[k] === "boolean" ? (upd[k] ? "tak" : "nie") : upd[k];
+      const v = k === "group" ? groupName(upd[k])
+        : typeof upd[k] === "boolean" ? (upd[k] ? "tak" : "nie") : upd[k];
       await logAction(n, `zmiana: ${LABELS[k]} → ${v}`);
     }
   }
@@ -403,14 +525,48 @@ $("pRemove").onclick = async () => {
   $("profile").close();
 };
 
+// ---------- Komentarze ----------
+function subscribeComments(n) {
+  unsubComments && unsubComments();
+  $("cList").innerHTML = `<div class="muted">Ładowanie…</div>`;
+  unsubComments = onSnapshot(query(collection(db, "comments"), where("name", "==", n)), snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.ts?.toMillis?.() || Date.now()) - (a.ts?.toMillis?.() || Date.now()));
+    $("cList").innerHTML = list.length ? list.map(c => {
+      const t = c.ts ? c.ts.toDate().toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "short" }) : "teraz";
+      const mine = c.user === user.email;
+      return `<div class="comment">
+        <div class="meta"><span>${t} · ${esc(c.user)}</span>${mine ? `<button data-cdel="${c.id}">Usuń</button>` : ""}</div>
+        <p>${esc(c.text)}</p>
+      </div>`;
+    }).join("") : `<div class="muted" style="padding:6px 0">Brak komentarzy</div>`;
+  }, err => { $("cList").innerHTML = `<div class="muted">Błąd: ${esc(err.message)}</div>`; });
+}
+
+$("cAdd").onclick = async () => {
+  const text = $("cText").value.trim(); if (!text) return;
+  await addDoc(collection(db, "comments"), { name: current, text, user: user.email,
+    day: $("day").value, ts: serverTimestamp() });
+  await logAction(current, "dodano komentarz");
+  $("cText").value = "";
+};
+
+$("cList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-cdel]"); if (!b) return;
+  if (!confirm("Usunąć ten komentarz?")) return;
+  await deleteDoc(doc(db, "comments", b.dataset.cdel));
+  await logAction(current, "usunięto komentarz");
+});
+
 // ---------- Raport Excel ----------
 $("exportBtn").onclick = async () => {
-  const from = $("from").value, to = $("to").value;
+  const from = $("from").value, to = $("to").value, rg = $("rGroup").value || "all";
   const snap = await getDocs(query(collection(db, "shifts"),
     where("day", ">=", from), where("day", "<=", to)));
 
   const rows = [], summary = {};
   snap.docs.map(d => d.data())
+    .filter(s => rg === "all" || groupOf(s.name) === rg)
     .sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name))
     .forEach(s => {
       const work = (s.arrival && s.departure) ? toMin(s.departure) - toMin(s.arrival) : 0;
@@ -419,8 +575,8 @@ $("exportBtn").onclick = async () => {
       const lim = limitFor(s.name, work);
       const p = people[s.name] || {};
       rows.push({
-        "Data": s.day, "Animator": s.name, "Umowa": p.contract || "",
-        "Student": p.student ? "tak" : "nie", "26+": p.over26 ? "tak" : "nie",
+        "Data": s.day, "Grupa": groupName(groupOf(s.name)), "Animator": s.name,
+        "Umowa": p.contract || "", "Student": p.student ? "tak" : "nie", "26+": p.over26 ? "tak" : "nie",
         "Przyjście": s.arrival || "", "Wyjście": s.departure || "",
         "Czas pracy": work ? fmt(work) : "",
         "Przerwy (godziny)": breaks.map(b => `${b.start}–${b.end}`).join(", "),
@@ -434,19 +590,30 @@ $("exportBtn").onclick = async () => {
   const sumRows = Object.entries(summary).map(([n, x]) => {
     const p = people[n] || {};
     return {
-      "Animator": n, "Umowa": p.contract || "",
+      "Grupa": groupName(groupOf(n)), "Animator": n, "Umowa": p.contract || "",
       "Student": p.student ? "tak" : "nie", "26+": p.over26 ? "tak" : "nie",
       "Dni pracy": x.dni, "Łączny czas pracy": fmt(x.praca),
       "Godziny (liczba)": +(x.praca / 60).toFixed(2),
       "Suma przerw [min]": x.przerwy, "Suma przekroczeń [min]": x.przekr
     };
-  });
+  }).sort((a, b) => a.Grupa.localeCompare(b.Grupa, "pl") || a.Animator.localeCompare(b.Animator, "pl"));
+
+  // komentarze z okresu
+  const cSnap = await getDocs(query(collection(db, "comments"),
+    where("day", ">=", from), where("day", "<=", to)));
+  const cRows = cSnap.docs.map(d => d.data())
+    .filter(c => rg === "all" || groupOf(c.name) === rg)
+    .sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name))
+    .map(c => ({ "Data": c.day, "Grupa": groupName(groupOf(c.name)), "Animator": c.name,
+      "Autor": c.user, "Komentarz": c.text }));
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Szczegóły");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sumRows), "Podsumowanie");
-  XLSX.writeFile(wb, `raport_${from}_${to}.xlsx`);
-  await logAction("-", `eksport raportu ${from} – ${to}`);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cRows), "Komentarze");
+  const gTag = rg === "all" ? "wszystkie" : groupName(rg).replace(/\s+/g, "_");
+  XLSX.writeFile(wb, `raport_${gTag}_${from}_${to}.xlsx`);
+  await logAction("-", `eksport raportu ${from} – ${to} (${rg === "all" ? "wszystkie grupy" : groupName(rg)})`);
 };
 
 setInterval(render, 30000); // odświeżanie liczników co 30 s
