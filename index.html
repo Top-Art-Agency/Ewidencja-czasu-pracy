@@ -47,7 +47,8 @@
   dialog::backdrop{background:rgba(0,0,0,.4)}
   .check{display:flex;align-items:center;gap:10px;min-height:44px}
   .check input{width:22px;height:22px}
-  #pBreaks div{padding:4px 0;font-size:14px}
+  .brow{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin:6px 0;align-items:center}
+  .brow button{min-height:44px;padding:0 12px}
 </style>
 </head>
 <body>
@@ -103,8 +104,15 @@
   <label class="check"><input type="checkbox" id="pStudent"> Student</label>
   <label class="check"><input type="checkbox" id="pOver26"> Powyżej 26 lat</label>
   <div class="field">
-    <span class="lbl">Przerwy w wybranym dniu</span>
+    <span class="lbl" id="pDayLbl" style="font-weight:600;color:#1c1c1e;font-size:14px">Czas pracy</span>
+    <div class="times" style="margin:6px 0">
+      <div><label>Przyjście</label><input type="time" id="pArrival"></div>
+      <div><label>Wyjście</label><input type="time" id="pDeparture"></div>
+    </div>
+    <span class="lbl">Przerwy (od – do)</span>
     <div id="pBreaks"></div>
+    <div id="pOngoing" class="muted"></div>
+    <button id="pAddBreak" class="small full" style="margin-top:6px">+ Dodaj przerwę</button>
   </div>
   <div class="row" style="margin-top:12px">
     <button id="pSave" class="primary">Zapisz</button>
@@ -311,6 +319,28 @@ $("cards").addEventListener("change", e => {
 $("cards").addEventListener("focusout", () => setTimeout(render, 0));
 
 // ---------- Profil ----------
+let editBreaks = [];
+
+function renderBreakRows() {
+  $("pBreaks").innerHTML = editBreaks.length
+    ? editBreaks.map((b, i) => `<div class="brow">
+        <input type="time" data-i="${i}" data-k="start" value="${b.start || ""}">
+        <input type="time" data-i="${i}" data-k="end" value="${b.end || ""}">
+        <button class="danger" data-del="${i}" title="Usuń przerwę">✕</button>
+      </div>`).join("")
+    : `<div class="muted" style="padding:4px 0">Brak przerw</div>`;
+}
+
+$("pBreaks").addEventListener("change", e => {
+  const t = e.target;
+  if (t.dataset.k) editBreaks[+t.dataset.i][t.dataset.k] = t.value;
+});
+$("pBreaks").addEventListener("click", e => {
+  const b = e.target.closest("[data-del]"); if (!b) return;
+  editBreaks.splice(+b.dataset.del, 1); renderBreakRows();
+});
+$("pAddBreak").onclick = () => { editBreaks.push({ start: "", end: "" }); renderBreakRows(); };
+
 function openProfile(n) {
   current = n;
   const p = people[n] || {}, s = shifts[n] || {};
@@ -318,17 +348,32 @@ function openProfile(n) {
   $("pContract").value = p.contract || "Zlecenie";
   $("pStudent").checked = !!p.student;
   $("pOver26").checked = !!p.over26;
-  const br = s.breaks || [];
-  $("pBreaks").innerHTML = br.length
-    ? br.map(b => `<div>${b.start}–${b.end} (${toMin(b.end) - toMin(b.start)} min)</div>`).join("")
-    : `<div class="muted">Brak przerw</div>`;
+  $("pDayLbl").textContent = `Czas pracy – ${$("day").value}`;
+  $("pArrival").value = s.arrival || "";
+  $("pDeparture").value = s.departure || "";
+  editBreaks = (s.breaks || []).map(b => ({ ...b }));
+  $("pOngoing").textContent = s.breakStart ? `Trwa przerwa od ${s.breakStart} (zakończ ją przyciskiem na karcie).` : "";
+  renderBreakRows();
   $("profile").showModal();
 }
 
 $("pClose").onclick = () => $("profile").close();
 
 $("pSave").onclick = async () => {
-  const n = current, p = people[n] || {};
+  const n = current, p = people[n] || {}, s = shifts[n] || {};
+
+  // --- walidacja czasu pracy ---
+  const arrival = $("pArrival").value, departure = $("pDeparture").value;
+  if (arrival && departure && toMin(departure) <= toMin(arrival))
+    return alert("Wyjście musi być później niż przyjście.");
+  const breaks = editBreaks.filter(b => b.start || b.end);
+  for (const b of breaks) {
+    if (!b.start || !b.end) return alert("Uzupełnij obie godziny każdej przerwy.");
+    if (toMin(b.end) <= toMin(b.start)) return alert(`Przerwa ${b.start}–${b.end}: koniec musi być po początku.`);
+  }
+  breaks.sort((a, b) => toMin(a.start) - toMin(b.start));
+
+  // --- dane osobowe ---
   const upd = { contract: $("pContract").value, student: $("pStudent").checked, over26: $("pOver26").checked };
   const old = { contract: p.contract || "", student: !!p.student, over26: !!p.over26 };
   const changed = Object.keys(upd).filter(k => old[k] !== upd[k]);
@@ -339,6 +384,15 @@ $("pSave").onclick = async () => {
       await logAction(n, `zmiana: ${LABELS[k]} → ${v}`);
     }
   }
+
+  // --- korekta czasu pracy ---
+  const fmtBr = arr => arr.map(b => `${b.start}–${b.end}`).join(", ") || "brak";
+  const notes = [];
+  if ((s.arrival || "") !== arrival) notes.push(`przyjście ${s.arrival || "–"} → ${arrival || "–"}`);
+  if ((s.departure || "") !== departure) notes.push(`wyjście ${s.departure || "–"} → ${departure || "–"}`);
+  if (fmtBr(s.breaks || []) !== fmtBr(breaks)) notes.push(`przerwy ${fmtBr(s.breaks || [])} → ${fmtBr(breaks)}`);
+  if (notes.length) await save(n, { arrival, departure, breaks }, "korekta: " + notes.join("; "));
+
   $("profile").close();
 };
 
