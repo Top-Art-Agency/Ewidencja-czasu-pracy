@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Animatorzy – czas pracy</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  body{font-family:system-ui,sans-serif;margin:0;padding:12px;background:#f4f5f7}
+  header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+  table{width:100%;border-collapse:collapse;background:#fff;margin-top:12px}
+  th,td{padding:8px;border-bottom:1px solid #ddd;text-align:center;font-size:14px}
+  button{padding:6px 10px;border:0;border-radius:6px;cursor:pointer}
+  .onbreak{background:#fff3cd}
+  .over{color:#c00;font-weight:bold}
+  .ok{color:#080}
+  #log{background:#fff;margin-top:16px;padding:8px;max-height:300px;overflow:auto;font-size:13px}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h2>Czas pracy animatorów</h2>
+  <div>
+    <input type="date" id="day">
+    <span id="who"></span>
+    <span id="loginBox">
+      <input id="email" type="email" placeholder="mail@topart.pl">
+      <input id="pass" type="password" placeholder="Hasło">
+      <button id="loginBtn">Zaloguj</button>
+      <button id="registerBtn">Załóż konto</button>
+    </span>
+    <button id="logoutBtn" class="hidden">Wyloguj</button>
+  </div>
+</header>
+
+<div id="app" class="hidden">
+  <div style="margin-top:10px">
+    <input id="newName" placeholder="Imię animatora">
+    <button id="addBtn">Dodaj animatora</button>
+  </div>
+  <div style="margin-top:10px">
+    Raport od <input type="date" id="from"> do <input type="date" id="to">
+    <button id="exportBtn">Pobierz Excel</button>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead><tr>
+      <th>Animator</th><th>Umowa</th><th>Student</th><th>26+</th>
+      <th>Przyjście</th><th>Wyjście</th><th>Przerwa</th>
+      <th>Suma przerw</th><th>Limit</th><th>Czas pracy</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  </div>
+  <h3>Historia</h3>
+  <div id="log"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendEmailVerification, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, getDocs,
+  where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// === WKLEJ SWOJĄ KONFIGURACJĘ Z FIREBASE ===
+const firebaseConfig = {
+  apiKey: "...", authDomain: "...", projectId: "...", appId: "..."
+};
+
+const DOMAINS = /@(topart|qmk)\.pl$/i;
+const CONTRACTS = ["Umowa o pracę", "Zlecenie", "B2B", "Inna"];
+const LABELS = { contract: "umowa", student: "student", over26: "26+" };
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $ = id => document.getElementById(id);
+$("day").value = new Date().toLocaleDateString("sv-SE");
+$("from").value = $("to").value = $("day").value;
+
+let user = null, shifts = {}, people = {}, ANIMATORS = [];
+let unsubShifts = null, unsubLog = null, unsubPeople = null;
+
+// --- Logowanie służbowym mailem ---
+$("loginBtn").onclick = async () => {
+  try {
+    const cred = await signInWithEmailAndPassword(auth, $("email").value.trim(), $("pass").value);
+    if (!cred.user.emailVerified) {
+      await sendEmailVerification(cred.user);
+      alert("Mail nie jest potwierdzony. Wysłałem link ponownie – kliknij go i zaloguj się jeszcze raz.");
+      await signOut(auth);
+    }
+  } catch (e) { alert("Błąd logowania: " + e.message); }
+};
+
+$("registerBtn").onclick = async () => {
+  const email = $("email").value.trim();
+  if (!DOMAINS.test(email)) return alert("Tylko adresy @topart.pl lub @qmk.pl");
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, $("pass").value);
+    await sendEmailVerification(cred.user);
+    alert("Sprawdź skrzynkę i kliknij link potwierdzający, potem zaloguj się.");
+    await signOut(auth);
+  } catch (e) { alert("Błąd: " + e.message); }
+};
+
+$("logoutBtn").onclick = () => signOut(auth);
+$("day").onchange = subscribe;
+
+onAuthStateChanged(auth, u => {
+  user = (u && u.emailVerified) ? u : null;
+  $("loginBox").classList.toggle("hidden", !!user);
+  $("logoutBtn").classList.toggle("hidden", !user);
+  $("app").classList.toggle("hidden", !user);
+  $("who").textContent = user ? user.email : "";
+  if (user) { subscribe(); subscribeAnimators(); }
+});
+
+function subscribe() {
+  if (!user) return;
+  const day = $("day").value;
+  unsubShifts && unsubShifts(); unsubLog && unsubLog();
+  unsubShifts = onSnapshot(query(collection(db, "shifts"), where("day", "==", day)), snap => {
+    shifts = {}; snap.forEach(d => shifts[d.data().name] = d.data()); render();
+  }, err => alert("Brak dostępu: " + err.message));
+  unsubLog = onSnapshot(query(collection(db, "logs"), where("day", "==", day), orderBy("ts", "desc")), snap => {
+    $("log").innerHTML = snap.docs.map(d => {
+      const l = d.data(), t = l.ts ? l.ts.toDate().toLocaleTimeString("pl-PL") : "";
+      return `<div>${t} – <b>${l.user}</b>: ${l.action} (${l.name})</div>`;
+    }).join("");
+  }, err => console.log(err.message));
+}
+
+function subscribeAnimators() {
+  unsubPeople && unsubPeople();
+  unsubPeople = onSnapshot(collection(db, "animators"), snap => {
+    people = {};
+    snap.forEach(d => { const p = d.data(); if (p.active !== false) people[p.name] = p; });
+    ANIMATORS = Object.keys(people).sort((a, b) => a.localeCompare(b, "pl"));
+    render();
+  });
+}
+
+const now = () => new Date().toTimeString().slice(0, 5);
+const toMin = t => { if (!t) return null; const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+const fmt = m => `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, "0")}m`;
+
+function breakTotal(s) {
+  let sum = (s.breaks || []).reduce((a, b) => a + (toMin(b.end) - toMin(b.start)), 0);
+  if (s.breakStart) sum += toMin(now()) - toMin(s.breakStart);
+  return sum;
+}
+// Kodeks pracy art. 134: ≥6h → 15 min, >9h → 30 min, >16h → 45 min
+function breakLimit(workMin) {
+  if (workMin > 16 * 60) return 45;
+  if (workMin > 9 * 60) return 30;
+  if (workMin >= 6 * 60) return 15;
+  return 0;
+}
+const limitFor = (name, work) => breakLimit(work); // dla wszystkich umów
+
+async function logAction(name, action) {
+  await addDoc(collection(db, "logs"), { day: $("day").value, name, action,
+    user: user.email, ts: serverTimestamp() });
+}
+
+async function save(name, data, action) {
+  const day = $("day").value;
+  await setDoc(doc(db, "shifts", `${day}_${name}`), { day, name, ...data }, { merge: true });
+  await logAction(name, action);
+}
+
+window.setTime = (name, field, val) =>
+  save(name, { [field]: val }, `${field === "arrival" ? "przyjście" : "wyjście"}: ${val || "usunięto"}`);
+
+window.toggleBreak = name => {
+  const s = shifts[name] || {};
+  if (!s.breakStart) return save(name, { breakStart: now() }, `start przerwy ${now()}`);
+  const b = { start: s.breakStart, end: now() };
+  const len = toMin(b.end) - toMin(b.start);
+  save(name, { breaks: [...(s.breaks || []), b], breakStart: null }, `koniec przerwy ${now()} (${len} min)`);
+};
+
+$("addBtn").onclick = async () => {
+  const name = $("newName").value.trim();
+  if (!name) return;
+  await setDoc(doc(db, "animators", name),
+    { name, contract: "Zlecenie", student: false, over26: false, active: true });
+  await logAction(name, "dodano animatora");
+  $("newName").value = "";
+};
+
+window.setPerson = async (name, field, val) => {
+  await setDoc(doc(db, "animators", name), { [field]: val }, { merge: true });
+  const v = typeof val === "boolean" ? (val ? "tak" : "nie") : val;
+  await logAction(name, `zmiana: ${LABELS[field]} → ${v}`);
+};
+
+window.removePerson = async name => {
+  if (!confirm(`Usunąć ${name} z listy?`)) return;
+  await setDoc(doc(db, "animators", name), { active: false }, { merge: true });
+  await logAction(name, "usunięto z listy");
+};
+
+function render() {
+  $("rows").innerHTML = ANIMATORS.map(n => {
+    const s = shifts[n] || {}, p = people[n] || {};
+    const start = toMin(s.arrival);
+    const end = toMin(s.departure) ?? (s.arrival ? toMin(now()) : null);
+    const work = start != null && end != null ? end - start : 0;
+    const br = breakTotal(s), lim = limitFor(n, work);
+    return `<tr class="${s.breakStart ? "onbreak" : ""}">
+      <td>${n} <button title="Usuń" onclick="removePerson('${n}')">✕</button></td>
+      <td><select onchange="setPerson('${n}','contract',this.value)">
+        ${CONTRACTS.map(c => `<option ${p.contract === c ? "selected" : ""}>${c}</option>`).join("")}
+      </select></td>
+      <td><input type="checkbox" ${p.student ? "checked" : ""} onchange="setPerson('${n}','student',this.checked)"></td>
+      <td><input type="checkbox" ${p.over26 ? "checked" : ""} onchange="setPerson('${n}','over26',this.checked)"></td>
+      <td><input type="time" value="${s.arrival || ""}" onchange="setTime('${n}','arrival',this.value)"></td>
+      <td><input type="time" value="${s.departure || ""}" onchange="setTime('${n}','departure',this.value)"></td>
+      <td><button onclick="toggleBreak('${n}')">${s.breakStart ? "Koniec przerwy (od " + s.breakStart + ")" : "Start przerwy"}</button></td>
+      <td class="${br > lim ? "over" : "ok"}">${br} min</td>
+      <td>${lim} min${lim > br ? ` (zostało ${lim - br})` : ""}</td>
+      <td>${work ? fmt(work) : "–"}</td>
+    </tr>`;
+  }).join("");
+}
+
+$("exportBtn").onclick = async () => {
+  const from = $("from").value, to = $("to").value;
+  const snap = await getDocs(query(collection(db, "shifts"),
+    where("day", ">=", from), where("day", "<=", to)));
+
+  const rows = [], summary = {};
+  snap.docs.map(d => d.data())
+    .sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name))
+    .forEach(s => {
+      const work = (s.arrival && s.departure) ? toMin(s.departure) - toMin(s.arrival) : 0;
+      const breaks = s.breaks || [];
+      const brSum = breaks.reduce((a, b) => a + toMin(b.end) - toMin(b.start), 0);
+      const lim = limitFor(s.name, work);
+      const p = people[s.name] || {};
+      rows.push({
+        "Data": s.day, "Animator": s.name, "Umowa": p.contract || "",
+        "Student": p.student ? "tak" : "nie", "26+": p.over26 ? "tak" : "nie",
+        "Przyjście": s.arrival || "", "Wyjście": s.departure || "",
+        "Czas pracy": work ? fmt(work) : "",
+        "Przerwy (godziny)": breaks.map(b => `${b.start}–${b.end}`).join(", "),
+        "Suma przerw [min]": brSum, "Limit [min]": lim,
+        "Przekroczenie [min]": Math.max(0, brSum - lim)
+      });
+      const sum = summary[s.name] ??= { dni: 0, praca: 0, przerwy: 0, przekr: 0 };
+      sum.dni++; sum.praca += work; sum.przerwy += brSum; sum.przekr += Math.max(0, brSum - lim);
+    });
+
+  const sumRows = Object.entries(summary).map(([n, x]) => {
+    const p = people[n] || {};
+    return {
+      "Animator": n, "Umowa": p.contract || "",
+      "Student": p.student ? "tak" : "nie", "26+": p.over26 ? "tak" : "nie",
+      "Dni pracy": x.dni, "Łączny czas pracy": fmt(x.praca),
+      "Godziny (liczba)": +(x.praca / 60).toFixed(2),
+      "Suma przerw [min]": x.przerwy, "Suma przekroczeń [min]": x.przekr
+    };
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Szczegóły");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sumRows), "Podsumowanie");
+  XLSX.writeFile(wb, `raport_${from}_${to}.xlsx`);
+  await logAction("-", `eksport raportu ${from} – ${to}`);
+};
+
+setInterval(render, 30000); // odświeżanie liczników co 30 s
+</script>
+</body>
+</html>
