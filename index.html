@@ -2,60 +2,116 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Animatorzy – czas pracy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f5f7">
+<title>Ewidencja animatorów</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
-  body{font-family:system-ui,sans-serif;margin:0;padding:12px;background:#f4f5f7}
-  header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
-  table{width:100%;border-collapse:collapse;background:#fff;margin-top:12px}
-  th,td{padding:8px;border-bottom:1px solid #ddd;text-align:center;font-size:14px}
-  button{padding:6px 10px;border:0;border-radius:6px;cursor:pointer}
-  .onbreak{background:#fff3cd}
-  .over{color:#c00;font-weight:bold}
-  .ok{color:#080}
-  #log{background:#fff;margin-top:16px;padding:8px;max-height:300px;overflow:auto;font-size:13px}
-  .hidden{display:none}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f4f5f7;color:#1c1c1e;font-size:16px}
+  .wrap{max-width:640px;margin:0 auto;padding:12px 12px 40px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  h1{font-size:22px;margin:0}
+  input,select,button{font:inherit;color:inherit}
+  input[type=date],input[type=time],input[type=email],input[type=password],input[type=text],select{
+    padding:10px;border:1px solid #ccc;border-radius:10px;background:#fff;width:100%;min-height:44px}
+  button{min-height:44px;padding:10px 14px;border:0;border-radius:10px;background:#e5e7eb;cursor:pointer}
+  button:disabled{opacity:.45;cursor:default}
+  .primary{background:#2563eb;color:#fff}
+  .danger{background:#fee2e2;color:#b91c1c}
+  .warn{background:#f59e0b;color:#fff}
+  .small{min-height:36px;padding:6px 12px;font-size:14px}
+  .full{width:100%}
+  .card{background:#fff;border-radius:14px;padding:12px;margin:10px 0;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .card.onbreak{background:#fff8e1;outline:2px solid #f59e0b}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .name{font-weight:600;font-size:18px;background:none;padding:0;min-height:auto;text-align:left;color:#1d4ed8}
+  .chip{font-size:12px;padding:4px 10px;border-radius:999px;background:#e5e7eb;white-space:nowrap}
+  .chip.work{background:#dcfce7;color:#166534}
+  .chip.brk{background:#fef3c7;color:#92400e}
+  .chip.done{background:#e0e7ff;color:#3730a3}
+  .times{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+  .times label,.lbl{font-size:12px;color:#666;display:block;margin-bottom:2px}
+  .stats{display:flex;justify-content:space-between;gap:8px;font-size:14px;color:#444;margin-top:8px}
+  .over{color:#c00;font-weight:600}
+  .ok{color:#15803d}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  details{background:#fff;border-radius:14px;padding:12px;margin:10px 0}
+  summary{font-weight:600;cursor:pointer}
+  #log div{padding:8px 0;border-bottom:1px solid #eee;font-size:14px}
+  .hidden{display:none!important}
+  .muted{color:#666;font-size:13px}
+  .field{margin:10px 0}
+  dialog{border:0;border-radius:16px;padding:16px;width:min(92vw,420px)}
+  dialog::backdrop{background:rgba(0,0,0,.4)}
+  .check{display:flex;align-items:center;gap:10px;min-height:44px}
+  .check input{width:22px;height:22px}
+  #pBreaks div{padding:4px 0;font-size:14px}
 </style>
 </head>
 <body>
-<header>
-  <h2>Czas pracy animatorów</h2>
-  <div>
-    <input type="date" id="day">
-    <span id="who"></span>
-    <span id="loginBox">
-      <input id="email" type="email" placeholder="mail@topart.pl">
-      <input id="pass" type="password" placeholder="Hasło">
-      <button id="loginBtn">Zaloguj</button>
-      <button id="registerBtn">Załóż konto</button>
-    </span>
-    <button id="logoutBtn" class="hidden">Wyloguj</button>
-  </div>
-</header>
+<div class="wrap">
+  <header>
+    <h1>Animatorzy</h1>
+    <button id="logoutBtn" class="small hidden">Wyloguj</button>
+  </header>
 
-<div id="app" class="hidden">
-  <div style="margin-top:10px">
-    <input id="newName" placeholder="Imię animatora">
-    <button id="addBtn">Dodaj animatora</button>
+  <div id="loginBox" class="card">
+    <div class="field"><input id="email" type="email" placeholder="mail@topart.pl" autocomplete="username"></div>
+    <div class="field"><input id="pass" type="password" placeholder="Hasło" autocomplete="current-password"></div>
+    <div class="row">
+      <button id="loginBtn" class="primary">Zaloguj</button>
+      <button id="registerBtn">Załóż konto</button>
+    </div>
+    <p class="muted">Tylko adresy @topart.pl i @qmk.pl.</p>
   </div>
-  <div style="margin-top:10px">
-    Raport od <input type="date" id="from"> do <input type="date" id="to">
-    <button id="exportBtn">Pobierz Excel</button>
+
+  <div id="app" class="hidden">
+    <div class="muted" id="who"></div>
+    <div class="field"><input type="date" id="day"></div>
+
+    <div id="cards"></div>
+
+    <details>
+      <summary>Dodaj animatora</summary>
+      <div class="row" style="margin-top:10px">
+        <input id="newName" type="text" placeholder="Imię">
+        <button id="addBtn" class="primary" style="flex:0 0 auto">Dodaj</button>
+      </div>
+    </details>
+
+    <details>
+      <summary>Raport Excel</summary>
+      <div class="row" style="margin-top:10px">
+        <div><span class="lbl">Od</span><input type="date" id="from"></div>
+        <div><span class="lbl">Do</span><input type="date" id="to"></div>
+      </div>
+      <button id="exportBtn" class="primary full" style="margin-top:10px">Pobierz Excel</button>
+    </details>
+
+    <details>
+      <summary>Historia dnia</summary>
+      <div id="log"></div>
+    </details>
   </div>
-  <div style="overflow-x:auto">
-  <table>
-    <thead><tr>
-      <th>Animator</th><th>Umowa</th><th>Student</th><th>26+</th>
-      <th>Przyjście</th><th>Wyjście</th><th>Przerwa</th>
-      <th>Suma przerw</th><th>Limit</th><th>Czas pracy</th>
-    </tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
-  </div>
-  <h3>Historia</h3>
-  <div id="log"></div>
 </div>
+
+<dialog id="profile">
+  <h2 id="pName" style="margin:0 0 8px"></h2>
+  <div class="field"><span class="lbl">Umowa</span><select id="pContract"></select></div>
+  <label class="check"><input type="checkbox" id="pStudent"> Student</label>
+  <label class="check"><input type="checkbox" id="pOver26"> Powyżej 26 lat</label>
+  <div class="field">
+    <span class="lbl">Przerwy w wybranym dniu</span>
+    <div id="pBreaks"></div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button id="pSave" class="primary">Zapisz</button>
+    <button id="pClose">Zamknij</button>
+  </div>
+  <button id="pRemove" class="danger full" style="margin-top:8px">Usuń z listy</button>
+</dialog>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -65,7 +121,6 @@ import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
 import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, getDocs,
   where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// === WKLEJ SWOJĄ KONFIGURACJĘ Z FIREBASE ===
 const firebaseConfig = {
   apiKey: "AIzaSyCr6KixI2htKunS1tFo69ull_E6CcXCZ0c",
   authDomain: "ewidencja-czasu-pracy-e4ae8.firebaseapp.com",
@@ -84,13 +139,17 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 $("day").value = new Date().toLocaleDateString("sv-SE");
 $("from").value = $("to").value = $("day").value;
+$("pContract").innerHTML = CONTRACTS.map(c => `<option>${c}</option>`).join("");
 
-let user = null, shifts = {}, people = {}, ANIMATORS = [];
+let user = null, shifts = {}, people = {}, ANIMATORS = [], current = null;
 let unsubShifts = null, unsubLog = null, unsubPeople = null;
 
-// --- Logowanie służbowym mailem ---
+// ---------- Logowanie ----------
 $("loginBtn").onclick = async () => {
   try {
     const cred = await signInWithEmailAndPassword(auth, $("email").value.trim(), $("pass").value);
@@ -108,7 +167,7 @@ $("registerBtn").onclick = async () => {
   try {
     const cred = await createUserWithEmailAndPassword(auth, email, $("pass").value);
     await sendEmailVerification(cred.user);
-    alert("Sprawdź skrzynkę i kliknij link potwierdzający, potem zaloguj się.");
+    alert("Sprawdź skrzynkę (także spam) i kliknij link potwierdzający, potem zaloguj się.");
     await signOut(auth);
   } catch (e) { alert("Błąd: " + e.message); }
 };
@@ -121,10 +180,11 @@ onAuthStateChanged(auth, u => {
   $("loginBox").classList.toggle("hidden", !!user);
   $("logoutBtn").classList.toggle("hidden", !user);
   $("app").classList.toggle("hidden", !user);
-  $("who").textContent = user ? user.email : "";
+  $("who").textContent = user ? "Zalogowano: " + user.email : "";
   if (user) { subscribe(); subscribeAnimators(); }
 });
 
+// ---------- Dane ----------
 function subscribe() {
   if (!user) return;
   const day = $("day").value;
@@ -135,8 +195,8 @@ function subscribe() {
   unsubLog = onSnapshot(query(collection(db, "logs"), where("day", "==", day), orderBy("ts", "desc")), snap => {
     $("log").innerHTML = snap.docs.map(d => {
       const l = d.data(), t = l.ts ? l.ts.toDate().toLocaleTimeString("pl-PL") : "";
-      return `<div>${t} – <b>${l.user}</b>: ${l.action} (${l.name})</div>`;
-    }).join("");
+      return `<div>${t} – <b>${esc(l.user)}</b>: ${esc(l.action)} (${esc(l.name)})</div>`;
+    }).join("") || `<div class="muted">Brak wpisów</div>`;
   }, err => console.log(err.message));
 }
 
@@ -150,6 +210,7 @@ function subscribeAnimators() {
   });
 }
 
+// ---------- Obliczenia ----------
 const now = () => new Date().toTimeString().slice(0, 5);
 const toMin = t => { if (!t) return null; const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 const fmt = m => `${Math.floor(m / 60)}h ${String(Math.round(m % 60)).padStart(2, "0")}m`;
@@ -168,6 +229,7 @@ function breakLimit(workMin) {
 }
 const limitFor = (name, work) => breakLimit(work); // dla wszystkich umów
 
+// ---------- Zapis ----------
 async function logAction(name, action) {
   await addDoc(collection(db, "logs"), { day: $("day").value, name, action,
     user: user.email, ts: serverTimestamp() });
@@ -179,19 +241,19 @@ async function save(name, data, action) {
   await logAction(name, action);
 }
 
-window.setTime = (name, field, val) =>
+const setTime = (name, field, val) =>
   save(name, { [field]: val }, `${field === "arrival" ? "przyjście" : "wyjście"}: ${val || "usunięto"}`);
 
-window.toggleBreak = name => {
+function toggleBreak(name) {
   const s = shifts[name] || {};
   if (!s.breakStart) return save(name, { breakStart: now() }, `start przerwy ${now()}`);
   const b = { start: s.breakStart, end: now() };
   const len = toMin(b.end) - toMin(b.start);
   save(name, { breaks: [...(s.breaks || []), b], breakStart: null }, `koniec przerwy ${now()} (${len} min)`);
-};
+}
 
 $("addBtn").onclick = async () => {
-  const name = $("newName").value.trim();
+  const name = $("newName").value.trim().replace(/\//g, "-");
   if (!name) return;
   await setDoc(doc(db, "animators", name),
     { name, contract: "Zlecenie", student: false, over26: false, active: true });
@@ -199,42 +261,95 @@ $("addBtn").onclick = async () => {
   $("newName").value = "";
 };
 
-window.setPerson = async (name, field, val) => {
-  await setDoc(doc(db, "animators", name), { [field]: val }, { merge: true });
-  const v = typeof val === "boolean" ? (val ? "tak" : "nie") : val;
-  await logAction(name, `zmiana: ${LABELS[field]} → ${v}`);
-};
-
-window.removePerson = async name => {
-  if (!confirm(`Usunąć ${name} z listy?`)) return;
-  await setDoc(doc(db, "animators", name), { active: false }, { merge: true });
-  await logAction(name, "usunięto z listy");
-};
-
+// ---------- Widok kart ----------
 function render() {
-  $("rows").innerHTML = ANIMATORS.map(n => {
-    const s = shifts[n] || {}, p = people[n] || {};
+  // nie przerywaj wpisywania godziny
+  if (document.activeElement && document.activeElement.type === "time") return;
+  if (!ANIMATORS.length) {
+    $("cards").innerHTML = `<div class="card muted">Brak animatorów – dodaj ich poniżej.</div>`;
+    return;
+  }
+  $("cards").innerHTML = ANIMATORS.map(n => {
+    const s = shifts[n] || {}, e = esc(n);
     const start = toMin(s.arrival);
     const end = toMin(s.departure) ?? (s.arrival ? toMin(now()) : null);
     const work = start != null && end != null ? end - start : 0;
     const br = breakTotal(s), lim = limitFor(n, work);
-    return `<tr class="${s.breakStart ? "onbreak" : ""}">
-      <td>${n} <button title="Usuń" onclick="removePerson('${n}')">✕</button></td>
-      <td><select onchange="setPerson('${n}','contract',this.value)">
-        ${CONTRACTS.map(c => `<option ${p.contract === c ? "selected" : ""}>${c}</option>`).join("")}
-      </select></td>
-      <td><input type="checkbox" ${p.student ? "checked" : ""} onchange="setPerson('${n}','student',this.checked)"></td>
-      <td><input type="checkbox" ${p.over26 ? "checked" : ""} onchange="setPerson('${n}','over26',this.checked)"></td>
-      <td><input type="time" value="${s.arrival || ""}" onchange="setTime('${n}','arrival',this.value)"></td>
-      <td><input type="time" value="${s.departure || ""}" onchange="setTime('${n}','departure',this.value)"></td>
-      <td><button onclick="toggleBreak('${n}')">${s.breakStart ? "Koniec przerwy (od " + s.breakStart + ")" : "Start przerwy"}</button></td>
-      <td class="${br > lim ? "over" : "ok"}">${br} min</td>
-      <td>${lim} min${lim > br ? ` (zostało ${lim - br})` : ""}</td>
-      <td>${work ? fmt(work) : "–"}</td>
-    </tr>`;
+    const [chipCls, chipTxt] =
+      s.breakStart ? ["brk", "Na przerwie"] :
+      s.departure ? ["done", "Wyszedł"] :
+      s.arrival ? ["work", "W pracy"] : ["", "Nieobecny"];
+    return `<div class="card ${s.breakStart ? "onbreak" : ""}">
+      <div class="top">
+        <button class="name" data-act="profile" data-name="${e}">${e} ›</button>
+        <span class="chip ${chipCls}">${chipTxt}</span>
+      </div>
+      <div class="times">
+        <div><label>Przyjście</label><input type="time" data-field="arrival" data-name="${e}" value="${s.arrival || ""}"></div>
+        <div><label>Wyjście</label><input type="time" data-field="departure" data-name="${e}" value="${s.departure || ""}"></div>
+      </div>
+      <button class="full ${s.breakStart ? "warn" : ""}" data-act="break" data-name="${e}" ${s.arrival ? "" : "disabled"}>
+        ${s.breakStart ? "Koniec przerwy (od " + s.breakStart + ")" : "Start przerwy"}
+      </button>
+      <div class="stats">
+        <span class="${br > lim ? "over" : "ok"}">Przerwy: ${br} / ${lim} min</span>
+        <span>Praca: ${work ? fmt(work) : "–"}</span>
+      </div>
+    </div>`;
   }).join("");
 }
 
+$("cards").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  if (b.dataset.act === "break") toggleBreak(b.dataset.name);
+  if (b.dataset.act === "profile") openProfile(b.dataset.name);
+});
+$("cards").addEventListener("change", e => {
+  const i = e.target;
+  if (i.dataset.field) setTime(i.dataset.name, i.dataset.field, i.value);
+});
+$("cards").addEventListener("focusout", () => setTimeout(render, 0));
+
+// ---------- Profil ----------
+function openProfile(n) {
+  current = n;
+  const p = people[n] || {}, s = shifts[n] || {};
+  $("pName").textContent = n;
+  $("pContract").value = p.contract || "Zlecenie";
+  $("pStudent").checked = !!p.student;
+  $("pOver26").checked = !!p.over26;
+  const br = s.breaks || [];
+  $("pBreaks").innerHTML = br.length
+    ? br.map(b => `<div>${b.start}–${b.end} (${toMin(b.end) - toMin(b.start)} min)</div>`).join("")
+    : `<div class="muted">Brak przerw</div>`;
+  $("profile").showModal();
+}
+
+$("pClose").onclick = () => $("profile").close();
+
+$("pSave").onclick = async () => {
+  const n = current, p = people[n] || {};
+  const upd = { contract: $("pContract").value, student: $("pStudent").checked, over26: $("pOver26").checked };
+  const old = { contract: p.contract || "", student: !!p.student, over26: !!p.over26 };
+  const changed = Object.keys(upd).filter(k => old[k] !== upd[k]);
+  if (changed.length) {
+    await setDoc(doc(db, "animators", n), upd, { merge: true });
+    for (const k of changed) {
+      const v = typeof upd[k] === "boolean" ? (upd[k] ? "tak" : "nie") : upd[k];
+      await logAction(n, `zmiana: ${LABELS[k]} → ${v}`);
+    }
+  }
+  $("profile").close();
+};
+
+$("pRemove").onclick = async () => {
+  if (!confirm(`Usunąć ${current} z listy?`)) return;
+  await setDoc(doc(db, "animators", current), { active: false }, { merge: true });
+  await logAction(current, "usunięto z listy");
+  $("profile").close();
+};
+
+// ---------- Raport Excel ----------
 $("exportBtn").onclick = async () => {
   const from = $("from").value, to = $("to").value;
   const snap = await getDocs(query(collection(db, "shifts"),
