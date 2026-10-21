@@ -60,6 +60,9 @@
   .comment .meta{font-size:12px;color:#666;display:flex;justify-content:space-between;gap:6px;align-items:center}
   .comment .meta button{min-height:28px;padding:2px 8px;font-size:12px}
   .comment p{margin:4px 0 0;white-space:pre-wrap;word-break:break-word}
+  .cprev{display:block;width:100%;text-align:left;background:#f4f5f7;border-radius:10px;padding:8px 10px;margin-top:8px;min-height:auto;font-size:14px;color:#333}
+  .cprev .ctext{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+  .cprev .cmeta{font-size:12px;color:#666;margin-top:2px}
 </style>
 </head>
 <body>
@@ -70,13 +73,18 @@
   </header>
 
   <div id="loginBox" class="card">
+    <button id="googleBtn" class="full" style="background:#fff;border:1px solid #ccc;display:flex;align-items:center;justify-content:center;gap:10px">
+      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.8 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>
+      Zaloguj przez Google
+    </button>
+    <p class="muted" style="text-align:center;margin:12px 0 4px">lub mailem służbowym</p>
     <div class="field"><input id="email" type="email" placeholder="mail@topart.pl" autocomplete="username"></div>
     <div class="field"><input id="pass" type="password" placeholder="Hasło" autocomplete="current-password"></div>
     <div class="row">
       <button id="loginBtn" class="primary">Zaloguj</button>
       <button id="registerBtn">Załóż konto</button>
     </div>
-    <p class="muted">Tylko adresy @topart.pl i @qmk.pl.</p>
+    <p class="muted">Mail służbowy: tylko @topart.pl i @qmk.pl. Konto Google: tylko adresy dodane do listy dostępu.</p>
   </div>
 
   <div id="app" class="hidden">
@@ -119,6 +127,16 @@
       <summary>Historia dnia</summary>
       <div id="log"></div>
     </details>
+
+    <details>
+      <summary>Dostęp (konta Google)</summary>
+      <p class="muted" style="margin:8px 0">Adresy, które mogą logować się przez Google. Konta @topart.pl i @qmk.pl mają dostęp zawsze.</p>
+      <div id="accessList"></div>
+      <div class="grow" style="margin-top:10px">
+        <input id="newAccess" type="email" placeholder="adres@gmail.com">
+        <button id="addAccessBtn" class="primary">Dodaj</button>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -155,10 +173,10 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  sendEmailVerification, signOut, onAuthStateChanged }
+  sendEmailVerification, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, addDoc, query, getDocs,
-  where, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, collection, addDoc, query, getDocs,
+  where, orderBy, serverTimestamp, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCr6KixI2htKunS1tFo69ull_E6CcXCZ0c",
@@ -173,10 +191,10 @@ const DOMAINS = /@(topart|qmk)\.pl$/i;
 const CONTRACTS = ["Umowa o pracę", "Zlecenie", "B2B", "Inna"];
 const LABELS = { contract: "umowa", student: "student", over26: "26+", group: "grupa" };
 const DEFAULT_GROUPS = [
-  { id: "g1", name: "Moja grupa", order: 1 },
-  { id: "g2", name: "Punkt 1", order: 2 },
-  { id: "g3", name: "Punkt 2", order: 3 },
-  { id: "g4", name: "Punkt 3", order: 4 }
+  { id: "g1", name: "Triki", order: 1 },
+  { id: "g2", name: "Mobi 1", order: 2 },
+  { id: "g3", name: "Mobi 2", order: 3 },
+  { id: "g4", name: "Mobi 3", order: 4 }
 ];
 
 const app = initializeApp(firebaseConfig);
@@ -198,6 +216,7 @@ $("pContract").innerHTML = CONTRACTS.map(c => `<option>${c}</option>`).join("");
 let user = null, shifts = {}, people = {}, ANIMATORS = [], current = null;
 let groups = {}, GROUP_IDS = [], currentGroup = store.get("group") || "g1", seeded = false;
 let unsubShifts = null, unsubLog = null, unsubPeople = null, unsubGroups = null, unsubComments = null;
+let unsubAllComments = null, commentsByName = {};
 
 // ---------- Logowanie ----------
 $("loginBtn").onclick = async () => {
@@ -222,16 +241,102 @@ $("registerBtn").onclick = async () => {
   } catch (e) { alert("Błąd: " + e.message); }
 };
 
+$("googleBtn").onclick = async () => {
+  try {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    if (e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request")
+      alert("Błąd logowania Google: " + e.message);
+  }
+};
+
 $("logoutBtn").onclick = () => signOut(auth);
 $("day").onchange = subscribe;
 
-onAuthStateChanged(auth, u => {
-  user = (u && u.emailVerified) ? u : null;
+const ADMINS = ["adamjaro12345@gmail.com"];   // musi być zgodne z regułami Firestore
+let unsubAccess = null, accessEmails = [];
+
+onAuthStateChanged(auth, async u => {
+  let ok = !!(u && u.emailVerified);
+  // sprawdź, czy konto ma dostęp (reguły Firestore zdecydują)
+  if (ok) {
+    try { await getDoc(doc(db, "config", "access")); }
+    catch {
+      ok = false;
+      alert(`Konto ${u.email} nie ma dostępu.\nPoproś osobę z dostępem o dodanie tego adresu w sekcji „Dostęp”.`);
+      await signOut(auth);
+      return;
+    }
+  }
+  user = ok ? u : null;
+  if (!user) [unsubShifts, unsubLog, unsubPeople, unsubGroups, unsubComments, unsubAccess, unsubAllComments]
+    .forEach(f => f && f());
   $("loginBox").classList.toggle("hidden", !!user);
   $("logoutBtn").classList.toggle("hidden", !user);
   $("app").classList.toggle("hidden", !user);
   $("who").textContent = user ? "Zalogowano: " + user.email : "";
-  if (user) { subscribe(); subscribeAnimators(); subscribeGroups(); }
+  if (user) { subscribe(); subscribeAnimators(); subscribeGroups(); subscribeAccess(); subscribeAllComments(); }
+});
+
+// ---------- Komentarze na liście (najnowszy pod imieniem) ----------
+function subscribeAllComments() {
+  unsubAllComments && unsubAllComments();
+  unsubAllComments = onSnapshot(collection(db, "comments"), snap => {
+    commentsByName = {};
+    snap.forEach(d => {
+      const c = d.data();
+      (commentsByName[c.name] ??= []).push(c);
+    });
+    const ms = c => c.ts?.toMillis?.() ?? Date.now();
+    Object.values(commentsByName).forEach(list => list.sort((a, b) => ms(b) - ms(a)));
+    render();
+  }, err => console.log(err.message));
+}
+
+function commentPreview(n, e) {
+  const list = commentsByName[n];
+  if (!list || !list.length) return "";
+  const c = list[0];
+  const when = c.ts ? c.ts.toDate().toLocaleDateString("pl-PL", { day: "numeric", month: "short" }) : "teraz";
+  const who = (c.user || "").split("@")[0];
+  const more = list.length > 1 ? ` · +${list.length - 1} ${list.length - 1 === 1 ? "kolejny" : "kolejne"}` : "";
+  return `<button class="cprev" data-act="profile" data-name="${e}">
+      <div class="ctext">💬 ${esc(c.text)}</div>
+      <div class="cmeta">${when} · ${esc(who)}${more}</div>
+    </button>`;
+}
+
+// ---------- Dostęp (konta Google) ----------
+function subscribeAccess() {
+  unsubAccess && unsubAccess();
+  unsubAccess = onSnapshot(doc(db, "config", "access"), snap => {
+    accessEmails = (snap.exists() && snap.data().emails) || [];
+    const all = [...new Set([...ADMINS, ...accessEmails])].sort();
+    $("accessList").innerHTML = all.map(e => `<div class="grow">
+        <span style="align-self:center;word-break:break-all">${esc(e)}</span>
+        ${ADMINS.includes(e) ? `<span class="muted" style="align-self:center">administrator</span>`
+          : `<button class="small danger" data-unaccess="${esc(e)}">Usuń</button>`}
+      </div>`).join("");
+  });
+}
+
+$("addAccessBtn").onclick = async () => {
+  const email = $("newAccess").value.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return alert("Wpisz poprawny adres e-mail.");
+  if (ADMINS.includes(email) || accessEmails.includes(email)) return alert("Ten adres już ma dostęp.");
+  await setDoc(doc(db, "config", "access"), { emails: arrayUnion(email) }, { merge: true });
+  await logAction("-", `nadano dostęp: ${email}`);
+  $("newAccess").value = "";
+};
+
+$("accessList").addEventListener("click", async e => {
+  const b = e.target.closest("[data-unaccess]"); if (!b) return;
+  const email = b.dataset.unaccess;
+  if (!confirm(`Odebrać dostęp ${email}?`)) return;
+  await setDoc(doc(db, "config", "access"), { emails: arrayRemove(email) }, { merge: true });
+  await logAction("-", `odebrano dostęp: ${email}`);
 });
 
 // ---------- Dane ----------
@@ -408,6 +513,7 @@ function render() {
         <button class="name" data-act="profile" data-name="${e}">${e} ›</button>
         <span class="chip ${chipCls}">${chipTxt}</span>
       </div>
+      ${commentPreview(n, e)}
       <div class="times">
         <div><label>Przyjście</label><input type="time" data-field="arrival" data-name="${e}" value="${s.arrival || ""}"></div>
         <div><label>Wyjście</label><input type="time" data-field="departure" data-name="${e}" value="${s.departure || ""}"></div>
