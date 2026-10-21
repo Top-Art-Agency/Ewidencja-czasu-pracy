@@ -84,11 +84,18 @@
       <button id="loginBtn" class="primary">Zaloguj</button>
       <button id="registerBtn">Załóż konto</button>
     </div>
-    <p class="muted">Mail służbowy: tylko @topart.pl i @qmk.pl. Konto Google: tylko adresy dodane do listy dostępu.</p>
+    <p class="muted">Mail służbowy @topart.pl / @qmk.pl – dostęp od razu. Konto Google – dostęp po zatwierdzeniu przez administratora.</p>
+  </div>
+
+  <div id="pendingBox" class="card hidden">
+    <h3 id="pendTitle" style="margin-top:0">Czekasz na zatwierdzenie</h3>
+    <p id="pendText" class="muted"></p>
+    <button id="pendLogout" class="full">Wyloguj</button>
   </div>
 
   <div id="app" class="hidden">
     <div class="muted" id="who"></div>
+    <button id="reqBanner" class="full warn hidden" style="margin-top:8px"></button>
     <div class="field"><input type="date" id="day"></div>
 
     <div id="groupTabs" class="tabs"></div>
@@ -128,9 +135,12 @@
       <div id="log"></div>
     </details>
 
-    <details>
-      <summary>Dostęp (konta Google)</summary>
-      <p class="muted" style="margin:8px 0">Adresy, które mogą logować się przez Google. Konta @topart.pl i @qmk.pl mają dostęp zawsze.</p>
+    <details id="accessSection" class="hidden">
+      <summary>Dostęp (konta Google)<span id="reqCount" style="color:#b91c1c"></span></summary>
+      <h3>Prośby o dostęp</h3>
+      <div id="reqList"></div>
+      <h3>Mają dostęp</h3>
+      <p class="muted" style="margin:0 0 8px">Konta @topart.pl i @qmk.pl mają dostęp zawsze.</p>
       <div id="accessList"></div>
       <div class="grow" style="margin-top:10px">
         <input id="newAccess" type="email" placeholder="adres@gmail.com">
@@ -256,29 +266,75 @@ $("logoutBtn").onclick = () => signOut(auth);
 $("day").onchange = subscribe;
 
 const ADMINS = ["adamjaro12345@gmail.com"];   // musi być zgodne z regułami Firestore
-let unsubAccess = null, accessEmails = [];
+const isAdminUser = () => !!user && ADMINS.includes(user.email);
+let unsubAccess = null, unsubRequests = null, unsubMyReq = null, accessEmails = [];
 
-onAuthStateChanged(auth, async u => {
+function stopAll() {
+  [unsubShifts, unsubLog, unsubPeople, unsubGroups, unsubComments, unsubAccess, unsubAllComments,
+   unsubRequests, unsubMyReq].forEach(f => f && f());
+  unsubMyReq = null;
+}
+
+onAuthStateChanged(auth, u => handleAuth(u));
+
+async function handleAuth(u) {
+  stopAll();
+  $("pendingBox").classList.add("hidden");
   let ok = !!(u && u.emailVerified);
-  // sprawdź, czy konto ma dostęp (reguły Firestore zdecydują)
+  // sprawdź, czy konto ma dostęp (decydują reguły Firestore)
   if (ok) {
     try { await getDoc(doc(db, "config", "access")); }
-    catch {
+    catch (e) {
+      if (e.code === "permission-denied") return showPending(u);
+      alert("Błąd połączenia: " + e.message);
       ok = false;
-      alert(`Konto ${u.email} nie ma dostępu.\nPoproś osobę z dostępem o dodanie tego adresu w sekcji „Dostęp”.`);
-      await signOut(auth);
-      return;
     }
   }
   user = ok ? u : null;
-  if (!user) [unsubShifts, unsubLog, unsubPeople, unsubGroups, unsubComments, unsubAccess, unsubAllComments]
-    .forEach(f => f && f());
   $("loginBox").classList.toggle("hidden", !!user);
   $("logoutBtn").classList.toggle("hidden", !user);
   $("app").classList.toggle("hidden", !user);
+  $("accessSection").classList.toggle("hidden", !isAdminUser());
   $("who").textContent = user ? "Zalogowano: " + user.email : "";
-  if (user) { subscribe(); subscribeAnimators(); subscribeGroups(); subscribeAccess(); subscribeAllComments(); }
-});
+  if (user) {
+    subscribe(); subscribeAnimators(); subscribeGroups(); subscribeAllComments();
+    if (isAdminUser()) subscribeAccess();
+  }
+}
+
+// ---------- Oczekiwanie na zatwierdzenie ----------
+async function showPending(u) {
+  user = null;
+  $("loginBox").classList.add("hidden");
+  $("app").classList.add("hidden");
+  $("logoutBtn").classList.add("hidden");
+  $("pendingBox").classList.remove("hidden");
+  $("pendTitle").textContent = "Czekasz na zatwierdzenie";
+  $("pendText").textContent = `Konto ${u.email} zostało zgłoszone. Administrator musi zatwierdzić dostęp – strona odświeży się sama.`;
+
+  const ref = doc(db, "requests", u.email);
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists())
+      await setDoc(ref, { email: u.email, name: u.displayName || "", status: "pending", ts: serverTimestamp() });
+  } catch (e) { $("pendText").textContent = "Nie udało się wysłać prośby: " + e.message; return; }
+
+  let first = true;
+  unsubMyReq = onSnapshot(ref, s => {
+    const st = s.data()?.status;
+    if (st === "approved" && !first) { handleAuth(auth.currentUser); return; }   // zatwierdzono – wejdź
+    if (st === "rejected") {
+      $("pendTitle").textContent = "Brak dostępu";
+      $("pendText").textContent = `Prośba konta ${u.email} została odrzucona. Skontaktuj się z administratorem.`;
+    }
+    first = false;
+  });
+}
+$("pendLogout").onclick = () => signOut(auth);
+$("reqBanner").onclick = () => {
+  $("accessSection").open = true;
+  $("accessSection").scrollIntoView({ behavior: "smooth" });
+};
 
 // ---------- Komentarze na liście (najnowszy pod imieniem) ----------
 function subscribeAllComments() {
@@ -308,8 +364,30 @@ function commentPreview(n, e) {
     </button>`;
 }
 
-// ---------- Dostęp (konta Google) ----------
+// ---------- Dostęp (konta Google) – tylko administrator ----------
 function subscribeAccess() {
+  unsubRequests && unsubRequests();
+  unsubRequests = onSnapshot(collection(db, "requests"), snap => {
+    const reqs = snap.docs.map(d => d.data()).filter(r => r.status !== "approved")
+      .sort((a, b) => (a.status === "pending" ? 0 : 1) - (b.status === "pending" ? 0 : 1)
+        || (b.ts?.toMillis?.() || 0) - (a.ts?.toMillis?.() || 0));
+    const pending = reqs.filter(r => r.status === "pending").length;
+    $("reqCount").textContent = pending ? ` (${pending})` : "";
+    $("reqBanner").textContent = `Nowe prośby o dostęp: ${pending} – kliknij, aby zatwierdzić`;
+    $("reqBanner").classList.toggle("hidden", !pending);
+    $("reqList").innerHTML = reqs.length ? reqs.map(r => {
+      const t = r.ts ? r.ts.toDate().toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "short" }) : "";
+      return `<div class="comment">
+        <div style="word-break:break-all"><b>${esc(r.name || r.email)}</b>${r.name ? `<br><span class="muted">${esc(r.email)}</span>` : ""}</div>
+        <div class="muted">${t}${r.status === "rejected" ? " · odrzucona" : ""}</div>
+        <div class="row" style="margin-top:6px">
+          <button class="small primary" data-approve="${esc(r.email)}">Zatwierdź</button>
+          ${r.status === "pending" ? `<button class="small danger" data-reject="${esc(r.email)}">Odrzuć</button>` : ""}
+        </div>
+      </div>`;
+    }).join("") : `<div class="muted" style="padding:6px 0">Brak próśb</div>`;
+  });
+
   unsubAccess && unsubAccess();
   unsubAccess = onSnapshot(doc(db, "config", "access"), snap => {
     accessEmails = (snap.exists() && snap.data().emails) || [];
@@ -327,6 +405,7 @@ $("addAccessBtn").onclick = async () => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return alert("Wpisz poprawny adres e-mail.");
   if (ADMINS.includes(email) || accessEmails.includes(email)) return alert("Ten adres już ma dostęp.");
   await setDoc(doc(db, "config", "access"), { emails: arrayUnion(email) }, { merge: true });
+  await setDoc(doc(db, "requests", email), { email, status: "approved", by: user.email }, { merge: true });
   await logAction("-", `nadano dostęp: ${email}`);
   $("newAccess").value = "";
 };
@@ -336,7 +415,24 @@ $("accessList").addEventListener("click", async e => {
   const email = b.dataset.unaccess;
   if (!confirm(`Odebrać dostęp ${email}?`)) return;
   await setDoc(doc(db, "config", "access"), { emails: arrayRemove(email) }, { merge: true });
+  await setDoc(doc(db, "requests", email), { email, status: "rejected", by: user.email }, { merge: true });
   await logAction("-", `odebrano dostęp: ${email}`);
+});
+
+$("reqList").addEventListener("click", async e => {
+  const a = e.target.closest("[data-approve]"), r = e.target.closest("[data-reject]");
+  if (a) {
+    const email = a.dataset.approve;
+    await setDoc(doc(db, "config", "access"), { emails: arrayUnion(email) }, { merge: true });
+    await setDoc(doc(db, "requests", email), { status: "approved", by: user.email }, { merge: true });
+    await logAction("-", `zatwierdzono dostęp: ${email}`);
+  }
+  if (r) {
+    const email = r.dataset.reject;
+    if (!confirm(`Odrzucić prośbę ${email}?`)) return;
+    await setDoc(doc(db, "requests", email), { status: "rejected", by: user.email }, { merge: true });
+    await logAction("-", `odrzucono prośbę: ${email}`);
+  }
 });
 
 // ---------- Dane ----------
